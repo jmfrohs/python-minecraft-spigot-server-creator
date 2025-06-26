@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+.cache/
+.cache
+*.log
+*.bak
+*.swp
+.DS_Store
+.idea/
+.vscode/
+servers/
+.minecraft_server_creator/
