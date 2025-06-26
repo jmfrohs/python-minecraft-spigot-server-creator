@@ -1,86 +1,86 @@
 # Minecraft Spigot Test Server Creator
 
-Ein leistungsfähiges Command-Line-Tool zum automatischen Erstellen von Minecraft Spigot Test Servern.  
-Es übernimmt das Herunterladen, Bauen und Konfigurieren von Spigot-Servern für verschiedene Minecraft-Versionen.
+A powerful command-line tool for automatically creating Minecraft Spigot test servers.  
+It handles downloading, building, and configuring Spigot servers for various Minecraft versions.
 
 ## Features
 
-- Automatisches Herunterladen und/oder Bauen von Spigot-Server-JARs
-- Unterstützung für viele Minecraft-Versionen (inkl. 1.21.x)
-- Parallele Downloads und optimierte BuildTools-Nutzung
-- Verwaltung mehrerer Server-Instanzen
-- Konfigurierbare Optionen (RAM, Port, Gamemode, PvP, Whitelist, MOTD, etc.)
-- Automatische Java-Versionserkennung und Warnungen
-- Caching für Downloads und BuildTools
-- Einfache CLI-Bedienung
+- Automatic downloading and/or building of Spigot server JARs
+- Supports many Minecraft versions (including 1.21.x)
+- Parallel downloads and optimized BuildTools usage
+- Manage multiple server instances
+- Configurable options (RAM, port, gamemode, PvP, whitelist, MOTD, etc.)
+- Automatic Java version detection and warnings
+- Caching for downloads and BuildTools
+- Simple CLI usage
 
-## Voraussetzungen
+## Requirements
 
 - **Python 3.8+**
-- **Java 17+** (für Minecraft 1.17+)
-- Internetverbindung (für Downloads)
+- **Java 17+** (for Minecraft 1.17+)
+- Internet connection (for downloads)
 
 ## Installation
 
-1. Repository klonen:
+1. Clone the repository:
    ```sh
    git clone <repository-url>
    cd python-server-bau
    ```
 
-2. Abhängigkeiten installieren:
+2. Install dependencies:
    ```sh
    pip install -r requirements.txt
    ```
 
-## Nutzung
+## Usage
 
-### Server erstellen
+### Create a server
 
 ```sh
-python spigot_creator.py create <Servername> <Version> [Optionen]
+python spigot_creator.py create <ServerName> <Version> [options]
 ```
 
-Beispiel:
+Example:
 ```sh
 python spigot_creator.py create MyServer 1.21.4 -p 25566 -m 4G --gamemode survival --difficulty normal
 ```
 
-### Server auflisten
+### List servers
 
 ```sh
 python spigot_creator.py list
 ```
 
-### Server entfernen
+### Remove a server
 
 ```sh
-python spigot_creator.py remove <Servername>
+python spigot_creator.py remove <ServerName>
 ```
 
-### Verfügbare Versionen anzeigen
+### Show available versions
 
 ```sh
 python spigot_creator.py versions
 ```
 
-### Konfiguration anzeigen oder ändern
+### Show or change configuration
 
 ```sh
 python spigot_creator.py config show
 python spigot_creator.py config set <key> <value>
 ```
 
-### Hilfe anzeigen
+### Show help
 
 ```sh
 python spigot_creator.py --help
 ```
 
-## Beispiel-Konfiguration
+## Example configuration
 
-Die Konfiguration wird automatisch unter `~/.minecraft_server_creator/config.json` angelegt.  
-Beispiel-Inhalt:
+The configuration is automatically created at `~/.minecraft_server_creator/config.json`.  
+Example content:
 ```json
 {
   "java_path": "java",
@@ -94,6 +94,6 @@ Beispiel-Inhalt:
 }
 ```
 
-## Lizenz
+## License
 
-MIT License – siehe [LICENSE](LICENSE).
+MIT License – see [LICENSE](LICENSE).
