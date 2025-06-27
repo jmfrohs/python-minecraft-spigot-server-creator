@@ -41,9 +41,9 @@ import os
 
 
 class SpigotServerCreator:
-    def __init__(self):
+    def __init__(self, servers_dir: Optional[Path] = None):
         self.base_dir = Path.cwd()
-        self.servers_dir = self.base_dir / "servers" 
+        self.servers_dir = Path(servers_dir) if servers_dir else self.base_dir / "servers"
         self.cache_dir = Path.home() / ".minecraft_server_creator" / "cache"
         self.config_file = Path.home() / ".minecraft_server_creator" / "config.json"
         
@@ -709,6 +709,7 @@ Examples:
     create_parser.add_argument('version', help='Minecraft version (e.g. 1.21.4)')
     create_parser.add_argument('-p', '--port', type=int, default=25565, help='Server port (default: 25565)')
     create_parser.add_argument('-m', '--memory', default='2G', help='RAM allocation (default: 2G)')
+    create_parser.add_argument('--dir', '--directory', dest='directory', default=None, help='Directory to save the server')
     create_parser.add_argument('--gamemode', choices=['survival', 'creative', 'adventure', 'spectator'], 
         default='creative', help='Gamemode (default: creative)')
     create_parser.add_argument('--difficulty', choices=['peaceful', 'easy', 'normal', 'hard'], 
@@ -744,6 +745,9 @@ Examples:
     config_set_parser.add_argument('value', help='New value')
     
     args = parser.parse_args()
+
+    servers_dir = Path(args.directory) if getattr(args, 'directory', None) else None
+    creator = SpigotServerCreator(servers_dir=servers_dir)
     
     if not args.command:
         parser.print_help()
