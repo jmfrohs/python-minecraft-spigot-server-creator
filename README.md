@@ -1,4 +1,4 @@
-# Minecraft Spigot Test Server Creator
+# Minecraft Server Creator
 
 A powerful command-line tool for automatically creating Minecraft Spigot test servers.  
 It handles downloading, building, and configuring Spigot servers for various Minecraft versions.
