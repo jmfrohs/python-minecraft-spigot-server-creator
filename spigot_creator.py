@@ -29,6 +29,7 @@ Command line tool for the automatic creation of Minecraft spigot test servers
 import sys
 import argparse
 import subprocess
+import platform
 import requests
 import shutil
 import tempfile
@@ -173,6 +174,59 @@ class SpigotServerCreator:
         file_age = time.time() - buildtools_path.stat().st_mtime
         return file_age > update_interval
     
+    def fast_rmtree(self, path: Path, show_progress: bool = False):
+        """Fast removal of a directory, especially on Windows - IMPROVED VERSION"""
+        if show_progress and not self.config.get("quick_mode", False):
+            print(f"Removing directory: {path}")
+
+        if not path.exists():
+            if show_progress and not self.config.get("quick_mode", False):
+                print("Directory does not exist, nothing to remove")
+            return
+
+        if platform.system() == "Windows":
+            try:
+                # Erst Dateien entsperren (falls möglich)
+                subprocess.run(['attrib', '-R', str(path / "*"), '/S'], 
+                            capture_output=True, timeout=10)
+            except:  # noqa: E722
+                pass
+                
+            try:
+                # Windows-spezifische schnelle Entfernung
+                result = subprocess.run(['cmd', '/c', 'rmdir', '/S', '/Q', str(path)], 
+                                    capture_output=True, timeout=30)
+                if result.returncode == 0:
+                    if show_progress and not self.config.get("quick_mode", False):
+                        print("Directory successfully removed (Windows fast removal)")
+                    return
+                else:
+                    print(f"[DEBUG] Windows rmdir failed with code {result.returncode}")
+                    
+            except subprocess.TimeoutExpired:
+                print("[DEBUG] Windows rmdir timeout, trying fallback...")
+            except Exception as e:
+                print(f"[DEBUG] Windows rmdir failed: {e}")
+        
+        # Fallback zu shutil.rmtree für alle Systeme
+        try:
+            shutil.rmtree(path, ignore_errors=False)
+            if show_progress and not self.config.get("quick_mode", False):
+                print("Directory successfully removed (shutil.rmtree)")
+        except Exception as e:
+            print(f"[ERROR] shutil.rmtree also failed: {e}")
+            # Letzter Versuch mit ignore_errors=True
+            try:
+                shutil.rmtree(path, ignore_errors=True)
+                if not path.exists():
+                    if show_progress and not self.config.get("quick_mode", False):
+                        print("Directory successfully removed (shutil.rmtree with ignore_errors)")
+                else:
+                    raise Exception("All removal methods failed")
+            except Exception as final_e:
+                raise Exception(f"Complete removal failure: {final_e}")
+
+    
     def download_file_parallel(self, url: str, output_path: Path, description: str = "Download") -> None:
         """Optimized download with progress indicator"""
         try:
@@ -279,11 +333,88 @@ class SpigotServerCreator:
                 return buildtools_path
             
             raise Exception(f"Error downloading BuildTools.jar: {e}")
+        
+    SUPPORTED_BUKKIT_VERSIONS = [
+    "1.21.4", "1.21.3", "1.21.2", "1.21.1", "1.21",
+    "1.20.6", "1.20.5", "1.20.4", "1.20.3", "1.20.2", "1.20.1", "1.20",
+    "1.19.4", "1.19.3", "1.19.2", "1.19.1", "1.19",
+    "1.18.2", "1.18.1", "1.18",
+    "1.17.1", "1.17",
+    "1.16.5", "1.16.4", "1.16.3", "1.16.2", "1.16.1",
+    "1.15.2", "1.15.1", "1.15",
+    "1.14.4", "1.14.3", "1.14.2", "1.14.1", "1.14",
+    "1.13.2", "1.13.1", "1.13",
+    "1.12.2", "1.12.1", "1.12",
+    "1.11.2", "1.11.1", "1.11",
+    "1.10.2", "1.10",
+    "1.9.4", "1.9.2", "1.9",
+    "1.8.8"
+]
+
+    def download_bukkit(self, version: str) -> Path:
+        """Download Bukkit JAR"""
+        if version not in self.SUPPORTED_BUKKIT_VERSIONS:
+            raise Exception(
+                f"Bukkit/CraftBukkit ist für Version {version} nicht verfügbar.\n"
+                "Siehe https://getbukkit.org/download/craftbukkit für unterstützte Versionen."
+            )
+        bukkit_jar = self.cache_dir / f"bukkit-{version}.jar"
+        url = f"https://cdn.getbukkit.org/craftbukkit/craftbukkit-{version}.jar"
+        response = requests.head(url)
+        if response.status_code != 200:
+            raise Exception(
+                f"Bukkit/CraftBukkit JAR for version {version} not found at {url}.\n"
+                "Hinweis: Bukkit/CraftBukkit ist nicht für alle Minecraft-Versionen verfügbar. "
+                "Siehe https://getbukkit.org/download/craftbukkit für verfügbare Versionen."
+            )  
+        if not bukkit_jar.exists():
+            print(f"Downloading Bukkit {version} ...")
+            self.download_file_parallel(url, bukkit_jar, f"Bukkit {version}")
+        return bukkit_jar
+
+    def download_vanilla(self, version: str) -> Path:
+        """Download Vanilla Minecraft Server JAR"""
+        vanilla_jar = self.cache_dir / f"minecraft_server.{version}.jar"
+        url = self.get_vanilla_server_url(version)
+        if not url:
+            raise Exception(f"Could not find download URL for vanilla version {version}")
+        if not vanilla_jar.exists():
+            print(f"Downloading Vanilla Minecraft {version} ...")
+            self.download_file_parallel(url, vanilla_jar, f"Vanilla {version}")
+        return vanilla_jar
+
+    def get_vanilla_hash(self, version: str) -> str:
+        """Fetches the Mojang hash for a given version from the official manifest."""
+        try:
+            manifest_url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
+            manifest = requests.get(manifest_url, timeout=10).json()
+            version_info = next((v for v in manifest["versions"] if v["id"] == version), None)
+            if not version_info:
+                raise Exception(f"Version {version} not found in Mojang manifest.")
+            version_json = requests.get(version_info["url"], timeout=10).json()
+            return version_json["downloads"]["server"]["sha1"]
+        except Exception as e:
+            print(f"Could not fetch vanilla hash for {version}: {e}")
+            return ""
+        
+    def get_vanilla_server_url(self, version: str) -> str:
+        """Fetches the Mojang server JAR URL for a given version."""
+        try:
+            manifest_url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
+            manifest = requests.get(manifest_url, timeout=10).json()
+            version_info = next((v for v in manifest["versions"] if v["id"] == version), None)
+            if not version_info:
+                raise Exception(f"Version {version} not found in Mojang manifest.")
+            version_json = requests.get(version_info["url"], timeout=10).json()
+            return version_json["downloads"]["server"]["url"]
+        except Exception as e:
+            print(f"Could not fetch vanilla server URL for {version}: {e}")
+            return ""
     
     def build_spigot_optimized(self, version: str, force_rebuild: bool = False) -> Path:
         """Optimized spigot creation with improved performance"""
         spigot_jar = self.cache_dir / f"spigot-{version}.jar"
-        
+
         if spigot_jar.exists() and not force_rebuild:
             if not self.config.get("quick_mode", False):
                 print(f"Spigot {version} already created.")
@@ -294,32 +425,32 @@ class SpigotServerCreator:
             return prebuilt_jar
 
         print(f"Create spigot {version} with BuildTools...")
-        
+
         if not self.check_java_version():
             raise Exception("Java check failed")
-        
+
         buildtools_path = self.download_buildtools()
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
 
-            temp_buildtools = temp_path / "BuildTools.jar"
-            shutil.copy2(buildtools_path, temp_buildtools)
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
 
-            cmd = [
-                self.config["java_path"], 
-                "-Xmx2G", 
-                "-jar", str(temp_buildtools),
-                "--rev", version,
-                "--output-dir", str(temp_path),
-                "--compile", "spigot",  
-                "--disable-certificate-check" 
-            ]
+                temp_buildtools = temp_path / "BuildTools.jar"
+                shutil.copy2(buildtools_path, temp_buildtools)
 
-            if version.startswith(("1.19", "1.20", "1.21")):
-                cmd.extend(["--disable-java-check"])
-            
-            try:
+                cmd = [
+                    self.config["java_path"],
+                    "-Xmx2G",
+                    "-jar", str(temp_buildtools),
+                    "--rev", version,
+                    "--output-dir", str(temp_path),
+                    "--compile", "spigot",
+                    "--disable-certificate-check"
+                ]
+
+                if version.startswith(("1.19", "1.20", "1.21")):
+                    cmd.append("--disable-java-check")
+
                 if not self.config.get("quick_mode", False):
                     print(f"Execute: {' '.join(cmd)}")
                     print("This may take a few minutes...")
@@ -329,7 +460,7 @@ class SpigotServerCreator:
                     "MAVEN_OPTS": "-Xmx2G -XX:+UseG1GC",
                     "JAVA_TOOL_OPTIONS": "-Xmx2G"
                 })
-                
+
                 if self.config.get("quick_mode", False):
                     result = subprocess.run(
                         cmd,
@@ -339,7 +470,6 @@ class SpigotServerCreator:
                         env=env,
                         timeout=1800
                     )
-                    
                     if result.returncode != 0:
                         print("BuildTools error:")
                         print(result.stdout[-1000:])
@@ -356,12 +486,9 @@ class SpigotServerCreator:
                         universal_newlines=True,
                         env=env
                     )
-
                     for line in process.stdout:
                         print(f"BuildTools: {line.strip()}")
-                    
                     process.wait()
-                    
                     if process.returncode != 0:
                         raise Exception(f"BuildTools failed with exit code:{process.returncode}")
 
@@ -376,13 +503,13 @@ class SpigotServerCreator:
 
                 shutil.copy2(built_jar, spigot_jar)
                 print(f"Spigot {version} successfully created and saved in the cache.")
-                
+
                 return spigot_jar
-                
-            except subprocess.TimeoutExpired:
-                raise Exception("BuildTools timeout - build took too long")
-            except Exception as e:
-                raise Exception(f"Error when creating spigot: {e}")
+
+        except subprocess.TimeoutExpired:
+            raise Exception("BuildTools timeout - build took too long")
+        except Exception as e:
+            raise Exception(f"Error when creating spigot: {e}")
     
     def build_spigot(self, version: str, force_rebuild: bool = False) -> Path:
         """Wrapper for optimized spigot creation"""
@@ -560,48 +687,126 @@ class SpigotServerCreator:
             f.write("- `server_info.json` - Server-Informationen\n")
 
     def create_server(self, name: str, version: str, port: int = 25565, memory: str = "2G", **kwargs) -> Path:
-        """Creates a new Spigot Test Server - OPTIMIZED VERSION"""
+        """Creates a new Minecraft Server (Spigot/Bukkit/Vanilla) - OPTIMIZED VERSION WITH BUGFIX"""
+        server_type = kwargs.get('type', 'spigot')
         server_dir = self.servers_dir / name
-    
+        
+        print(f"[DEBUG] Server directory: {server_dir}")
+        print(f"[DEBUG] Directory exists: {server_dir.exists()}")
+        
+        # Handle existing server with optimized removal
         if server_dir.exists():
-            response = input(f"Server ‘{name}’ already exists. Overwrite? (y/N): ")
-            if response.lower() != 'y':
-                print("Canceled.")
-                return server_dir
-            shutil.rmtree(server_dir)
-    
+            if kwargs.get('force_overwrite', False):
+                print(f"Force overwriting existing server '{name}'...")
+                try:
+                    self.fast_rmtree(server_dir, show_progress=True)
+                    print("[DEBUG] Force removal completed")
+                except Exception as e:
+                    print(f"[ERROR] Force removal failed: {e}")
+                    raise
+                    
+                print("[DEBUG] Starting removal process...")
+                try:
+                    # Check if directory is accessible
+                    contents = list(server_dir.iterdir())
+                    print(f"[DEBUG] Directory contains {len(contents)} items")
+                    
+                    # BUGFIX: Immer fast_rmtree verwenden, unabhängig von der Anzahl der Dateien
+                    print("Removing existing server directory...")
+                    self.fast_rmtree(server_dir, show_progress=True)
+                    
+                    print("[DEBUG] Removal completed successfully")
+                    
+                    # Verify removal
+                    if server_dir.exists():
+                        print("[ERROR] Directory still exists after removal!")
+                        # BUGFIX: Zweiter Versuch mit shutil.rmtree wenn fast_rmtree fehlschlägt
+                        print("[DEBUG] Trying fallback removal method...")
+                        import shutil
+                        shutil.rmtree(server_dir, ignore_errors=True)
+                        
+                        # Nochmal prüfen
+                        if server_dir.exists():
+                            raise Exception("Directory removal failed - directory still exists after fallback")
+                        else:
+                            print("[DEBUG] Fallback removal successful")
+                    else:
+                        print("[DEBUG] Directory successfully removed")
+                        
+                except PermissionError as e:  # <-- Korrekt eingerückt!
+                    print(f"[ERROR] Permission denied: {e}")
+                    print("Make sure no files are open and you have write permissions.")
+                    print("Try running the command as administrator or closing any open files.")
+                    raise
+                except Exception as e:       
+                    print(f"[ERROR] Removal failed: {e}")
+                    print(f"[DEBUG] Directory still exists: {server_dir.exists()}")
+                    if server_dir.exists():
+                        try:
+                            contents = list(server_dir.iterdir())
+                            print(f"[DEBUG] Directory still contains: {[f.name for f in contents[:5]]}")
+                        except:  # noqa: E722
+                            print("[DEBUG] Cannot list directory contents")
+                    raise
+        
+        print("[DEBUG] Starting server creation...")
         start_time = time.time()
-        print(f"Create server ‘{name}’ with version {version}...")
-
-        server_dir.mkdir(parents=True)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            spigot_future = executor.submit(
-                self.build_spigot, version, kwargs.get('force_rebuild', False)
-            )
-
-            dirs_future = executor.submit(
-                lambda: [
-                    (server_dir / "plugins").mkdir(exist_ok=True),
-                    (server_dir / "world").mkdir(exist_ok=True),
-                    (server_dir / "logs").mkdir(exist_ok=True)
-                ]
-            )
-
-            spigot_jar = spigot_future.result()
-            dirs_future.result()
-
-        server_jar = server_dir / f"spigot-{version}.jar"
-        if not server_jar.exists():
-            shutil.copy2(spigot_jar, server_jar)
-
-        self.create_files_parallel(server_dir, name, version, port, memory, **kwargs)
-    
+        print(f"Creating server '{name}' with version {version}...")
+        
+        # Create server directory
+        try:
+            server_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[DEBUG] Created server directory: {server_dir}")
+        except Exception as e:
+            print(f"[ERROR] Failed to create server directory: {e}")
+            raise
+        
+        # Get appropriate JAR based on server type
+        try:
+            print(f"[DEBUG] Getting {server_type} JAR for version {version}")
+            if server_type == 'spigot':
+                jar_path = self.build_spigot(version, kwargs.get('force_rebuild', False))
+                jar_name = f"spigot-{version}.jar"
+            elif server_type == 'bukkit':
+                jar_path = self.download_bukkit(version)
+                jar_name = f"bukkit-{version}.jar"
+            elif server_type == 'vanilla':
+                jar_path = self.download_vanilla(version)
+                jar_name = f"minecraft_server.{version}.jar"
+            else:
+                raise Exception(f"Unknown server type: {server_type}")
+            
+            print(f"[DEBUG] JAR obtained: {jar_path}")
+        except Exception as e:
+            print(f"[ERROR] Failed to get {server_type} JAR: {e}")
+            raise
+        
+        # Copy JAR file efficiently
+        try:
+            server_jar = server_dir / jar_name
+            if not server_jar.exists():
+                if not self.config.get("quick_mode", False):
+                    print(f"Copying {server_type} JAR...")
+                shutil.copy2(jar_path, server_jar)
+                print(f"[DEBUG] JAR copied to: {server_jar}")
+        except Exception as e:
+            print(f"[ERROR] Failed to copy JAR: {e}")
+            raise
+        
+        # Create all server files in parallel
+        try:
+            print("[DEBUG] Creating server files...")
+            self.create_files_parallel(server_dir, name, version, port, memory, **kwargs)
+            print("[DEBUG] Server files created")
+        except Exception as e:
+            print(f"[ERROR] Failed to create server files: {e}")
+            raise
+        
         elapsed_time = time.time() - start_time
-        print(f"Server ‘{name}’ successfully created in {elapsed_time:.2f} seconds!")
+        print(f"Server '{name}' successfully created in {elapsed_time:.2f} seconds!")
         print(f"Path: {server_dir}")
         print(f"To start: cd {server_dir} && ./start.sh (Linux/Mac) or start.bat (Windows)")
-    
+        
         return server_dir
     
     def create_server_simple(self, name: str, version: str, port: int = 25565, memory: str = "2G") -> Path:
@@ -622,29 +827,30 @@ class SpigotServerCreator:
         
         return servers
     
-    def remove_server(self, name: str) -> bool:
-        """Removes one Server"""
+    def remove_server(self, name: str, force: bool = False) -> bool:
+        """Removes a server with optimized deletion"""
         server_dir = self.servers_dir / name
         
         if not server_dir.exists():
             print(f"Server '{name}' not found.")
             return False
         
-        response = input(f"Really delete server ‘{name}’? (y/N): ")
-        if response.lower() != 'y':
-            print("Cancelled.")
-            return False
+        if not force:
+            response = input(f"Really delete server '{name}'? (y/N): ")
+            if response.lower() != 'y':
+                print("Cancelled.")
+                return False
         
         try:
-            shutil.rmtree(server_dir)
-            print(f"Server ‘{name}’ successfully deleted.")
+            self.fast_rmtree(server_dir, show_progress=True)
+            print(f"Server '{name}' successfully deleted.")
             return True
         except Exception as e:
             print(f"Error during deletion: {e}")
             return False
-    
+
     def clean_cache(self) -> None:
-        """Cleans the cache"""
+        """Cleans the cache with optimized removal"""
         if not self.cache_dir.exists():
             print("Cache directory does not exist.")
             return
@@ -655,7 +861,7 @@ class SpigotServerCreator:
             return
         
         try:
-            shutil.rmtree(self.cache_dir)
+            self.fast_rmtree(self.cache_dir, show_progress=True)
             self.cache_dir.mkdir(parents=True)
             print("Cache successfully cleaned.")
         except Exception as e:
@@ -707,6 +913,7 @@ Examples:
     create_parser = subparsers.add_parser('create', help='Creates a new server')
     create_parser.add_argument('name', help='Name of the server')
     create_parser.add_argument('version', help='Minecraft version (e.g. 1.21.4)')
+    create_parser.add_argument('--type', choices=['spigot', 'bukkit', 'vanilla'], default='spigot', help='Server type (default: spigot)')
     create_parser.add_argument('-p', '--port', type=int, default=25565, help='Server port (default: 25565)')
     create_parser.add_argument('-m', '--memory', default='2G', help='RAM allocation (default: 2G)')
     create_parser.add_argument('--dir', '--directory', dest='directory', default=None, help='Directory to save the server')
@@ -769,7 +976,8 @@ Examples:
                 'whitelist': args.whitelist,
                 'motd': args.motd,
                 'force_rebuild': args.force_rebuild,
-                'view_distance': args.view_distance
+                'view_distance': args.view_distance,
+                'type': args.type
             }
             
             creator.create_server(args.name, args.version, args.port, args.memory, **options)
