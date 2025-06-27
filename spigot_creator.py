@@ -722,7 +722,6 @@ class SpigotServerCreator:
                         print("[ERROR] Directory still exists after removal!")
                         # BUGFIX: Zweiter Versuch mit shutil.rmtree wenn fast_rmtree fehlschlägt
                         print("[DEBUG] Trying fallback removal method...")
-                        import shutil
                         shutil.rmtree(server_dir, ignore_errors=True)
                         
                         # Nochmal prüfen
