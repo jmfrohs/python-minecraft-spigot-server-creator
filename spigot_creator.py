@@ -23,7 +23,7 @@
 #!/usr/bin/env python3
 """
 Minecraft Spigot Test Server Creator - Optimized Version
-Ein Command-Line-Tool zum automatischen Erstellen von Minecraft Spigot Test Servern
+Command line tool for the automatic creation of Minecraft spigot test servers
 """
 
 import sys
@@ -47,43 +47,39 @@ class SpigotServerCreator:
         self.cache_dir = Path.home() / ".minecraft_server_creator" / "cache"
         self.config_file = Path.home() / ".minecraft_server_creator" / "config.json"
         
-        # Erstelle notwendige Verzeichnisse
         self.servers_dir.mkdir(exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
-        # Lade oder erstelle Konfiguration
         self.config = self.load_config()
         
-        # Cache für verfügbare Versionen
         self._versions_cache = None
         self._versions_cache_time = 0
     
     def load_config(self) -> Dict:
-        """Lädt die Konfiguration oder erstellt eine Standard-Konfiguration"""
+        """Loads the configuration or creates a standard configuration"""
         default_config = {
             "java_path": "java",
             "default_memory": "2G",
             "default_port": 25565,
-            "buildtools_update_interval": 86400,  # 24 Stunden in Sekunden
-            "use_prebuilt_spigot": True,  # Verwende vorgefertigte Spigot JARs wenn möglich
-            "parallel_downloads": True,   # Parallele Downloads aktivieren
-            "skip_java_check": False,     # Java-Check überspringen für Geschwindigkeit
-            "quick_mode": False           # Schnellmodus für häufige Entwicklung
+            "buildtools_update_interval": 86400,  
+            "use_prebuilt_spigot": True, 
+            "parallel_downloads": True,  
+            "skip_java_check": False,   
+            "quick_mode": False          
         }
         
         if self.config_file.exists():
             try:
                 with open(self.config_file, 'r') as f:
                     config = json.load(f)
-                    # Merge mit default_config für fehlende Werte
+                    
                     for key, value in default_config.items():
                         if key not in config:
                             config[key] = value
                     return config
             except Exception as e:
-                print(f"Warnung: Konnte Konfiguration nicht laden: {e}")
+                print(f"Warning: Could not load configuration: {e}")
         
-        # Erstelle Standard-Konfiguration
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.config_file, 'w') as f:
             json.dump(default_config, f, indent=2)
@@ -91,9 +87,9 @@ class SpigotServerCreator:
         return default_config
     
     def check_java_version(self) -> bool:
-        """Überprüft ob Java verfügbar ist und eine geeignete Version hat"""
+        """Checks whether Java is available and has a suitable version"""
         if self.config.get("skip_java_check", False):
-            print("Java-Check übersprungen (skip_java_check=true)")
+            print("Java-Check skiped (skip_java_check=true)")
             return True
             
         try:
@@ -101,47 +97,43 @@ class SpigotServerCreator:
                 [self.config["java_path"], "-version"],
                 capture_output=True,
                 text=True,
-                timeout=5  # Timeout hinzugefügt
+                timeout=5 
             )
 
             output = result.stderr + result.stdout
             if result.returncode != 0 or "version" not in output.lower():
-                print(f"Fehler: Java nicht gefunden unter '{self.config['java_path']}'")
+                print(f"Error: Java not found under'{self.config['java_path']}'")
                 return False
 
-            # Java Version aus stderr extrahieren (Java gibt Version Info dort aus)
             version_line = output.split('\n')[0]
             if not self.config.get("quick_mode", False):
-                print(f"Java gefunden: {version_line}")
+                print(f"Java found: {version_line}")
 
-            # Prüfe auf Java 17+ für neuere Minecraft Versionen
             if any(f"{v}." in version_line for v in range(17, 22)):
                 return True
             elif "1.8" in version_line:
                 if not self.config.get("quick_mode", False):
-                    print("Warnung: Java 8 erkannt. Für Minecraft 1.17+ wird Java 17+ empfohlen.")
+                    print("Warning: Java 8 detected. Java 17+ is recommended for Minecraft 1.17+.")
                 return True
             else:
                 if not self.config.get("quick_mode", False):
-                    print("Warnung: Unbekannte Java Version. Fortfahren...")
+                    print("Warning: Unknown Java version. Continue...")
                 return True
 
         except (FileNotFoundError, subprocess.TimeoutExpired):
-            print("Fehler: Java nicht gefunden oder Timeout. Bitte installieren Sie Java oder setzen Sie skip_java_check=true.")
+            print("Error: Java not found or timeout. Please install Java or set skip_java_check=true.")
             return False
         except Exception as e:
-            print(f"Fehler beim Überprüfen der Java Version: {e}")
+            print(f"Error when checking the Java version: {e}")
             return False
     
     def get_available_versions(self) -> List[str]:
-        """Holt verfügbare Spigot Versionen mit Caching"""
-        # Cache für 1 Stunde
+        """Fetches available spigot versions with caching"""
         if (self._versions_cache and 
             time.time() - self._versions_cache_time < 3600):
             return self._versions_cache
         
         try:
-            # Erweiterte Versionsliste mit neueren Versionen
             versions = [
                 "1.21.4", "1.21.3", "1.21.2", "1.21.1", "1.21",
                 "1.20.6", "1.20.5", "1.20.4", "1.20.3", "1.20.2", "1.20.1", "1.20",
@@ -163,30 +155,27 @@ class SpigotServerCreator:
             self._versions_cache_time = time.time()
             return versions
         except Exception as e:
-            print(f"Warnung: Konnte Versionen nicht abrufen: {e}")
+            print(f"Warning: Could not retrieve versions: {e}")
             return ["1.21.4", "1.20.4", "1.19.4", "1.18.2", "1.17.1", "1.16.5"]
     
     def should_update_buildtools(self) -> bool:
-        """Prüft ob BuildTools aktualisiert werden sollte"""
+        """Checks whether BuildTools should be updated"""
         buildtools_path = self.cache_dir / "BuildTools.jar"
         
         if not buildtools_path.exists():
             return True
-        
-        # Im Quick-Mode weniger häufig aktualisieren
+
         if self.config.get("quick_mode", False):
-            update_interval = self.config["buildtools_update_interval"] * 7  # 7x länger
+            update_interval = self.config["buildtools_update_interval"] * 7
         else:
             update_interval = self.config["buildtools_update_interval"]
         
-        # Prüfe Alter der Datei
         file_age = time.time() - buildtools_path.stat().st_mtime
         return file_age > update_interval
     
     def download_file_parallel(self, url: str, output_path: Path, description: str = "Download") -> None:
-        """Optimierter Download mit Progress-Anzeige"""
+        """Optimized download with progress indicator"""
         try:
-            # Verwende Session für bessere Performance
             session = requests.Session()
             session.headers.update({
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -199,8 +188,8 @@ class SpigotServerCreator:
             downloaded = 0
             
             # Größere Chunk-Size für bessere Performance
-            chunk_size = 32768  # 32KB statt 8KB
-            
+            chunk_size = 32768
+        
             with open(output_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if chunk:
@@ -212,19 +201,18 @@ class SpigotServerCreator:
                             print(f"\r{description}: {percent:.1f}%", end='', flush=True)
             
             if not self.config.get("quick_mode", False):
-                print()  # Neue Zeile nach Progress
+                print() 
                 
         except Exception as e:
-            raise Exception(f"Fehler beim Herunterladen: {e}")
+            raise Exception(f"Error during download: {e}")
     
     def try_download_prebuilt_spigot(self, version: str) -> Optional[Path]:
-        """Versucht eine vorgefertigte Spigot JAR herunterzuladen"""
+        """Try to download a ready-made Spigot JAR"""
         if not self.config.get("use_prebuilt_spigot", True):
             return None
         
         spigot_jar = self.cache_dir / f"spigot-{version}.jar"
-        
-        # Bekannte Download-URLs für beliebte Versionen
+
         prebuilt_urls = {
             "1.21.4": f"https://cdn.getbukkit.org/spigot/spigot-{version}.jar",
             "1.21.3": f"https://cdn.getbukkit.org/spigot/spigot-{version}.jar",
@@ -233,7 +221,6 @@ class SpigotServerCreator:
             "1.18.2": f"https://cdn.getbukkit.org/spigot/spigot-{version}.jar",
         }
         
-        # Alternative URLs
         alternative_urls = [
             f"https://download.getbukkit.org/spigot/spigot-{version}.jar",
             f"https://cdn.getbukkit.org/spigot/spigot-{version}.jar",
@@ -241,21 +228,20 @@ class SpigotServerCreator:
         ]
         
         all_urls = [prebuilt_urls.get(version)] + alternative_urls
-        all_urls = [url for url in all_urls if url]  # Filter None values
+        all_urls = [url for url in all_urls if url] 
         
         for url in all_urls:
             try:
-                print(f"Versuche vorgefertigte Spigot JAR für {version} herunterzuladen...")
+                print(f"Try to download ready-made Spigot JAR for {version}...")
                 self.download_file_parallel(url, spigot_jar, f"Spigot {version}")
-                
-                # Verifiziere dass es eine gültige JAR-Datei ist
-                if spigot_jar.stat().st_size > 1024 * 1024:  # Mindestens 1MB
-                    print(f"Vorgefertigte Spigot JAR für {version} erfolgreich heruntergeladen!")
+
+                if spigot_jar.stat().st_size > 1024 * 1024: 
+                    print(f"Pre-built Spigot JAR for {version} successfully downloaded!")
                     return spigot_jar
                 else:
-                    spigot_jar.unlink()  # Lösche ungültige Datei
+                    spigot_jar.unlink()  
                     
-            except Exception as e:  # noqa: F841
+            except Exception: 
                 if spigot_jar.exists():
                     spigot_jar.unlink()
                 continue
@@ -263,19 +249,18 @@ class SpigotServerCreator:
         return None
     
     def download_buildtools(self, force_update: bool = False) -> Path:
-        """Lädt BuildTools.jar herunter falls nicht vorhanden oder veraltet"""
+        """Downloads BuildTools.jar if not available or outdated"""
         buildtools_path = self.cache_dir / "BuildTools.jar"
         
         if buildtools_path.exists() and not force_update and not self.should_update_buildtools():
             if not self.config.get("quick_mode", False):
-                print("BuildTools.jar bereits vorhanden und aktuell.")
+                print("BuildTools.jar already available and up-to-date.")
             return buildtools_path
         
-        print("Lade BuildTools.jar herunter...")
+        print("Download BuildTools.jar...")
         url = "https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar"
         
         try:
-            # Backup der alten Version falls vorhanden
             if buildtools_path.exists():
                 backup_path = buildtools_path.with_suffix('.jar.backup')
                 shutil.move(buildtools_path, backup_path)
@@ -283,70 +268,62 @@ class SpigotServerCreator:
             self.download_file_parallel(url, buildtools_path, "BuildTools")
             
             if not self.config.get("quick_mode", False):
-                print("BuildTools.jar erfolgreich heruntergeladen.")
+                print("BuildTools.jar successfully downloaded.")
             return buildtools_path
             
         except Exception as e:
-            # Versuche Backup wiederherzustellen
             backup_path = buildtools_path.with_suffix('.jar.backup')
             if backup_path.exists():
                 shutil.move(backup_path, buildtools_path)
-                print("Backup von BuildTools.jar wiederhergestellt.")
+                print("Backup of BuildTools.jar restored.")
                 return buildtools_path
             
-            raise Exception(f"Fehler beim Herunterladen von BuildTools.jar: {e}")
+            raise Exception(f"Error downloading BuildTools.jar: {e}")
     
     def build_spigot_optimized(self, version: str, force_rebuild: bool = False) -> Path:
-        """Optimierte Spigot-Erstellung mit verbesserter Performance"""
+        """Optimized spigot creation with improved performance"""
         spigot_jar = self.cache_dir / f"spigot-{version}.jar"
         
         if spigot_jar.exists() and not force_rebuild:
             if not self.config.get("quick_mode", False):
-                print(f"Spigot {version} bereits erstellt.")
+                print(f"Spigot {version} already created.")
             return spigot_jar
-        
-        # Versuche zuerst vorgefertigte JAR herunterzuladen
+
         prebuilt_jar = self.try_download_prebuilt_spigot(version)
         if prebuilt_jar:
             return prebuilt_jar
-        
-        # Fallback: Erstelle mit BuildTools
-        print(f"Erstelle Spigot {version} mit BuildTools...")
+
+        print(f"Create spigot {version} with BuildTools...")
         
         if not self.check_java_version():
-            raise Exception("Java-Überprüfung fehlgeschlagen")
+            raise Exception("Java check failed")
         
         buildtools_path = self.download_buildtools()
         
-        # Temporäres Build-Verzeichnis
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            
-            # Kopiere BuildTools in temp Verzeichnis
+
             temp_buildtools = temp_path / "BuildTools.jar"
             shutil.copy2(buildtools_path, temp_buildtools)
-            
-            # Optimierte BuildTools-Argumente
+
             cmd = [
                 self.config["java_path"], 
-                "-Xmx2G",  # Mehr RAM für BuildTools
+                "-Xmx2G", 
                 "-jar", str(temp_buildtools),
                 "--rev", version,
                 "--output-dir", str(temp_path),
-                "--compile", "spigot",  # Nur Spigot kompilieren
-                "--disable-certificate-check"  # Zertifikatsprüfung deaktivieren
+                "--compile", "spigot",  
+                "--disable-certificate-check" 
             ]
-            
-            # Zusätzliche Optimierungen für neuere Versionen
+
             if version.startswith(("1.19", "1.20", "1.21")):
                 cmd.extend(["--disable-java-check"])
             
             try:
                 if not self.config.get("quick_mode", False):
-                    print(f"Führe aus: {' '.join(cmd)}")
-                    print("Dies kann einige Minuten dauern...")
-                
-                # Verwende optimierte Umgebungsvariablen
+                    print(f"Execute: {' '.join(cmd)}")
+                    print("This may take a few minutes...")
+
                 env = dict(os.environ)
                 env.update({
                     "MAVEN_OPTS": "-Xmx2G -XX:+UseG1GC",
@@ -354,23 +331,21 @@ class SpigotServerCreator:
                 })
                 
                 if self.config.get("quick_mode", False):
-                    # Im Quick-Mode: Stille Ausführung
                     result = subprocess.run(
                         cmd,
                         cwd=temp_path,
                         capture_output=True,
                         text=True,
                         env=env,
-                        timeout=1800  # 30 Minuten Timeout
+                        timeout=1800
                     )
                     
                     if result.returncode != 0:
-                        print("BuildTools Fehler:")
-                        print(result.stdout[-1000:])  # Letzten 1000 Zeichen
+                        print("BuildTools error:")
+                        print(result.stdout[-1000:])
                         print(result.stderr[-1000:])
-                        raise Exception(f"BuildTools fehlgeschlagen mit Exit-Code: {result.returncode}")
+                        raise Exception(f"BuildTools failed with exit code: {result.returncode}")
                 else:
-                    # Normaler Modus: Live-Output
                     process = subprocess.Popen(
                         cmd,
                         cwd=temp_path,
@@ -381,44 +356,40 @@ class SpigotServerCreator:
                         universal_newlines=True,
                         env=env
                     )
-                    
-                    # Zeige Live-Output
+
                     for line in process.stdout:
                         print(f"BuildTools: {line.strip()}")
                     
                     process.wait()
                     
                     if process.returncode != 0:
-                        raise Exception(f"BuildTools fehlgeschlagen mit Exit-Code: {process.returncode}")
-                
-                # Finde die erstellte Spigot JAR
+                        raise Exception(f"BuildTools failed with exit code:{process.returncode}")
+
                 built_jar = temp_path / f"spigot-{version}.jar"
                 if not built_jar.exists():
-                    # Suche nach möglichen JAR-Dateien
                     jar_files = list(temp_path.glob("spigot*.jar"))
                     if jar_files:
                         built_jar = jar_files[0]
-                        print(f"Spigot JAR gefunden: {built_jar}")
+                        print(f"Spigot JAR found: {built_jar}")
                     else:
-                        raise Exception(f"Spigot JAR nicht gefunden in: {temp_path}")
-                
-                # Kopiere in Cache
+                        raise Exception(f"Spigot JAR not found in: {temp_path}")
+
                 shutil.copy2(built_jar, spigot_jar)
-                print(f"Spigot {version} erfolgreich erstellt und im Cache gespeichert.")
+                print(f"Spigot {version} successfully created and saved in the cache.")
                 
                 return spigot_jar
                 
             except subprocess.TimeoutExpired:
-                raise Exception("BuildTools Timeout - Build dauerte zu lange")
+                raise Exception("BuildTools timeout - build took too long")
             except Exception as e:
-                raise Exception(f"Fehler beim Erstellen von Spigot: {e}")
+                raise Exception(f"Error when creating spigot: {e}")
     
     def build_spigot(self, version: str, force_rebuild: bool = False) -> Path:
-        """Wrapper für optimierte Spigot-Erstellung"""
+        """Wrapper for optimized spigot creation"""
         return self.build_spigot_optimized(version, force_rebuild)
     
     def create_files_parallel(self, server_dir: Path, name: str, version: str, port: int, memory: str, **kwargs) -> None:
-        """Erstellt alle Server-Dateien parallel"""
+        """Creates all server files in parallel"""
         def create_server_properties_task():
             self.create_server_properties(server_dir, port, **kwargs)
         
@@ -438,8 +409,7 @@ class SpigotServerCreator:
             (server_dir / "plugins").mkdir(exist_ok=True)
             (server_dir / "world").mkdir(exist_ok=True)
             (server_dir / "logs").mkdir(exist_ok=True)
-        
-        # Führe alle Tasks parallel aus
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
             futures = [
                 executor.submit(create_server_properties_task),
@@ -449,19 +419,17 @@ class SpigotServerCreator:
                 executor.submit(create_readme_task),
                 executor.submit(create_directories_task)
             ]
-            
-            # Warte auf Completion
+
             concurrent.futures.wait(futures)
-            
-            # Prüfe auf Exceptions
+
             for future in futures:
                 try:
                     future.result()
                 except Exception as e:
-                    print(f"Fehler beim Erstellen der Dateien: {e}")
+                    print(f"Error when creating the files: {e}")
     
     def create_server_properties(self, server_dir: Path, port: int = 25565, **kwargs) -> None:
-        """Erstellt server.properties Datei mit erweiterten Optionen"""
+        """Creates server.properties file with advanced options"""
         properties = {
             "server-port": port,
             "gamemode": kwargs.get("gamemode", "creative"),
@@ -491,7 +459,7 @@ class SpigotServerCreator:
                 f.write(f"{key}={value}\n")
     
     def create_eula_txt(self, server_dir: Path) -> None:
-        """Erstellt eula.txt Datei"""
+        """Creates eula.txt file"""
         eula_file = server_dir / "eula.txt"
         with open(eula_file, 'w', encoding='utf-8') as f:
             f.write("# EULA Agreement\n")
@@ -500,9 +468,8 @@ class SpigotServerCreator:
             f.write("eula=true\n")
     
     def create_start_script(self, server_dir: Path, jar_name: str, memory: str = "2G") -> None:
-        """Erstellt Start-Skripte für den Server mit optimierten JVM-Argumenten"""
-        
-        # Optimierte JVM-Argumente für bessere Performance
+        """Creates start scripts for the server with optimized JVM arguments"""
+
         jvm_args = [
             f"-Xmx{memory}",
             f"-Xms{memory}",
@@ -529,8 +496,7 @@ class SpigotServerCreator:
         ]
         
         java_cmd = f"{self.config['java_path']} {' '.join(jvm_args)} -jar {jar_name} nogui"
-        
-        # Linux/Mac Start-Skript
+
         start_sh = server_dir / "start.sh"
         with open(start_sh, 'w', encoding='utf-8') as f:
             f.write("#!/bin/bash\n")
@@ -544,8 +510,7 @@ class SpigotServerCreator:
             f.write("\necho 'Server stopped.'\n")
             f.write("read -p 'Press enter to continue...'\n")
         start_sh.chmod(0o755)
-        
-        # Windows Start-Skript
+
         start_bat = server_dir / "start.bat"
         with open(start_bat, 'w', encoding='utf-8') as f:
             f.write("@echo off\n")
@@ -575,7 +540,7 @@ class SpigotServerCreator:
             json.dump(info, f, indent=2)
     
     def create_readme(self, server_dir: Path, name: str, version: str, port: int, memory: str) -> None:
-        """Erstellt README-Datei"""
+        """Creates README-Datei"""
         readme_file = server_dir / "README.md"
         with open(readme_file, 'w', encoding='utf-8') as f:
             f.write(f"# Minecraft Spigot Server: {name}\n\n")
@@ -583,42 +548,38 @@ class SpigotServerCreator:
             f.write(f"**Port:** {port}\n")
             f.write(f"**Memory:** {memory}\n")
             f.write(f"**Erstellt:** {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            f.write("## Starten\n")
+            f.write("## Starts\n")
             f.write("- **Linux/Mac:** `./start.sh`\n")
             f.write("- **Windows:** `start.bat`\n\n")
-            f.write("## Verzeichnisse\n")
+            f.write("## Directorys\n")
             f.write("- `plugins/` - Für Plugins\n")
             f.write("- `world/` - Spielwelt\n")
             f.write("- `logs/` - Server-Logs\n\n")
-            f.write("## Konfiguration\n")
+            f.write("## Configuration\n")
             f.write("- `server.properties` - Server-Einstellungen\n")
             f.write("- `server_info.json` - Server-Informationen\n")
 
     def create_server(self, name: str, version: str, port: int = 25565, memory: str = "2G", **kwargs) -> Path:
-        """Erstellt einen neuen Spigot Test Server - OPTIMIERTE VERSION"""
+        """Creates a new Spigot Test Server - OPTIMIZED VERSION"""
         server_dir = self.servers_dir / name
     
         if server_dir.exists():
-            response = input(f"Server '{name}' existiert bereits. Überschreiben? (y/N): ")
+            response = input(f"Server ‘{name}’ already exists. Overwrite? (y/N): ")
             if response.lower() != 'y':
-                print("Abgebrochen.")
+                print("Canceled.")
                 return server_dir
             shutil.rmtree(server_dir)
     
         start_time = time.time()
-        print(f"Erstelle Server '{name}' mit Version {version}...")
-    
-        # Erstelle Server-Verzeichnis
+        print(f"Create server ‘{name}’ with version {version}...")
+
         server_dir.mkdir(parents=True)
-    
-        # Parallel: Spigot JAR erstellen und Dateien vorbereiten
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            # Task 1: Spigot JAR erstellen/laden
             spigot_future = executor.submit(
                 self.build_spigot, version, kwargs.get('force_rebuild', False)
             )
-        
-            # Task 2: Verzeichnisse erstellen
+
             dirs_future = executor.submit(
                 lambda: [
                     (server_dir / "plugins").mkdir(exist_ok=True),
@@ -626,32 +587,29 @@ class SpigotServerCreator:
                     (server_dir / "logs").mkdir(exist_ok=True)
                 ]
             )
-        
-            # Warte auf Spigot JAR
+
             spigot_jar = spigot_future.result()
             dirs_future.result()
-    
-        # Kopiere Spigot JAR in Server-Verzeichnis
+
         server_jar = server_dir / f"spigot-{version}.jar"
         if not server_jar.exists():
             shutil.copy2(spigot_jar, server_jar)
-    
-        # Erstelle alle Server-Dateien parallel
+
         self.create_files_parallel(server_dir, name, version, port, memory, **kwargs)
     
         elapsed_time = time.time() - start_time
-        print(f"Server '{name}' erfolgreich erstellt in {elapsed_time:.2f} Sekunden!")
-        print(f"Pfad: {server_dir}")
-        print(f"Zum Starten: cd {server_dir} && ./start.sh (Linux/Mac) oder start.bat (Windows)")
+        print(f"Server ‘{name}’ successfully created in {elapsed_time:.2f} seconds!")
+        print(f"Path: {server_dir}")
+        print(f"To start: cd {server_dir} && ./start.sh (Linux/Mac) or start.bat (Windows)")
     
         return server_dir
     
     def create_server_simple(self, name: str, version: str, port: int = 25565, memory: str = "2G") -> Path:
-        """Einfache Server-Erstellung ohne erweiterte Optionen - für Kompatibilität"""
+        """Simple server creation without advanced options - for compatibility"""
         return self.create_server(name, version, port, memory)
     
     def list_servers(self) -> List[Path]:
-        """Listet alle vorhandenen Server auf"""
+        """Lists all available servers"""
         if not self.servers_dir.exists():
             return []
         
@@ -665,53 +623,52 @@ class SpigotServerCreator:
         return servers
     
     def remove_server(self, name: str) -> bool:
-        """Entfernt einen Server"""
+        """Removes one Server"""
         server_dir = self.servers_dir / name
         
         if not server_dir.exists():
-            print(f"Server '{name}' nicht gefunden.")
+            print(f"Server '{name}' not found.")
             return False
         
-        response = input(f"Server '{name}' wirklich löschen? (y/N): ")
+        response = input(f"Really delete server ‘{name}’? (y/N): ")
         if response.lower() != 'y':
-            print("Abgebrochen.")
+            print("Cancelled.")
             return False
         
         try:
             shutil.rmtree(server_dir)
-            print(f"Server '{name}' erfolgreich gelöscht.")
+            print(f"Server ‘{name}’ successfully deleted.")
             return True
         except Exception as e:
-            print(f"Fehler beim Löschen: {e}")
+            print(f"Error during deletion: {e}")
             return False
     
     def clean_cache(self) -> None:
-        """Bereinigt den Cache"""
+        """Cleans the cache"""
         if not self.cache_dir.exists():
-            print("Cache-Verzeichnis existiert nicht.")
+            print("Cache directory does not exist.")
             return
         
-        response = input("Cache wirklich löschen? (y/N): ")
+        response = input("Really delete cache? (y/N): ")
         if response.lower() != 'y':
-            print("Abgebrochen.")
+            print("Cancelled.")
             return
         
         try:
             shutil.rmtree(self.cache_dir)
             self.cache_dir.mkdir(parents=True)
-            print("Cache erfolgreich bereinigt.")
+            print("Cache successfully cleaned.")
         except Exception as e:
-            print(f"Fehler beim Bereinigen des Caches: {e}")
+            print(f"Error when clearing the cache: {e}")
     
     def show_config(self) -> None:
-        """Zeigt die aktuelle Konfiguration an"""
-        print("Aktuelle Konfiguration:")
+        """Displays the current configuration"""
+        print("Current configuration:")
         print(json.dumps(self.config, indent=2))
-        print(f"\nKonfigurationsdatei: {self.config_file}")
+        print(f"\nConfiguration file: {self.config_file}")
     
     def update_config(self, key: str, value: str) -> None:
-        """Aktualisiert einen Konfigurationswert"""
-        # Versuche den Wert als JSON zu parsen
+        """Updates a configuration value"""
         try:
             parsed_value = json.loads(value)
         except json.JSONDecodeError:
@@ -719,15 +676,13 @@ class SpigotServerCreator:
         
         self.config[key] = parsed_value
         
-        # Speichere Konfiguration
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f, indent=2)
         
-        print(f"Konfiguration aktualisiert: {key} = {parsed_value}")
-
+        print(f"Configuration updated: {key} = {parsed_value}")
 
 def main():
-    """Hauptfunktion mit Command-Line Interface"""
+    """Main function with command line interface"""
     
     creator = SpigotServerCreator()
     
@@ -735,61 +690,58 @@ def main():
         description="Minecraft Spigot Test Server Creator - Optimized Version",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Beispiele:
-  %(prog)s create MyServer 1.21.4                    # Erstelle Server mit Standard-Einstellungen
-  %(prog)s create TestServer 1.20.4 -p 25566 -m 4G  # Server mit Port 25566 und 4GB RAM
-  %(prog)s create DevServer 1.19.4 --gamemode survival --difficulty normal
-  %(prog)s list                                       # Zeige alle Server
-  %(prog)s remove MyServer                           # Lösche Server
-  %(prog)s versions                                  # Zeige verfügbare Versionen
-  %(prog)s config show                               # Zeige Konfiguration
-  %(prog)s config set quick_mode true               # Aktiviere Quick-Mode
-        """
+Examples:
+ %(prog)s create MyServer 1.21.4 # Create server with default settings
+ %(prog)s create TestServer 1.20.4 -p 25566 -m 4G # Server with port 25566 and 4GB RAM
+ %(prog)s create DevServer 1.19.4 --gamemode survival --difficulty normal
+ %(prog)s list # Show all servers
+ %(prog)s remove MyServer # Delete server
+ %(prog)s versions # Show available versions
+ %(prog)s config show # Show configuration
+ %(prog)s config set quick_mode true # Activate Quick-Mode
+ """
     )
     
-    subparsers = parser.add_subparsers(dest='command', help='Verfügbare Befehle')
-    
-    # Create Command
-    create_parser = subparsers.add_parser('create', help='Erstelle einen neuen Server')
-    create_parser.add_argument('name', help='Name des Servers')
-    create_parser.add_argument('version', help='Minecraft Version (z.B. 1.21.4)')
-    create_parser.add_argument('-p', '--port', type=int, default=25565, help='Server Port (Standard: 25565)')
-    create_parser.add_argument('-m', '--memory', default='2G', help='RAM-Allocation (Standard: 2G)')
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+
+    create_parser = subparsers.add_parser('create', help='Creates a new server')
+    create_parser.add_argument('name', help='Name of the server')
+    create_parser.add_argument('version', help='Minecraft version (e.g. 1.21.4)')
+    create_parser.add_argument('-p', '--port', type=int, default=25565, help='Server port (default: 25565)')
+    create_parser.add_argument('-m', '--memory', default='2G', help='RAM allocation (default: 2G)')
     create_parser.add_argument('--gamemode', choices=['survival', 'creative', 'adventure', 'spectator'], 
-                               default='creative', help='Spielmodus (Standard: creative)')
+        default='creative', help='Gamemode (default: creative)')
     create_parser.add_argument('--difficulty', choices=['peaceful', 'easy', 'normal', 'hard'], 
-                               default='peaceful', help='Schwierigkeit (Standard: peaceful)')
-    create_parser.add_argument('--max-players', type=int, default=10, help='Max. Spieler (Standard: 10)')
-    create_parser.add_argument('--online-mode', action='store_true', help='Online-Modus aktivieren')
-    create_parser.add_argument('--pvp', action='store_true', help='PvP aktivieren')
-    create_parser.add_argument('--whitelist', action='store_true', help='Whitelist aktivieren')
+        default='peaceful', help='Difficulty (default: peaceful)')
+    create_parser.add_argument('--max-players', type=int, default=10, help='Max players (default: 10)')
+    create_parser.add_argument('--online-mode', action='store_true', help='Activate online mode')
+    create_parser.add_argument('--pvp', action='store_true', help='Activate PvP')
+    create_parser.add_argument('--whitelist', action='store_true', help='Activate whitelist')
     create_parser.add_argument('--motd', default='Spigot Test Server', help='Server MOTD')
-    create_parser.add_argument('--force-rebuild', action='store_true', help='Spigot JAR neu erstellen')
-    create_parser.add_argument('--view-distance', type=int, default=10, help='Sichtweite (Standard: 10)')
+    create_parser.add_argument('--force-rebuild', action='store_true', help='Create new Spigot JAR')
+    create_parser.add_argument('--view-distance', type=int, default=10, help='View distance (default: 10)')
     
-    # List Command
-    subparsers.add_parser('list', help='Liste alle Server auf') 
-    
+    subparsers.add_parser('list', help='List all servers')
+
     # Remove Command
-    remove_parser = subparsers.add_parser('remove', help='Entferne einen Server')
-    remove_parser.add_argument('name', help='Name des zu löschenden Servers')
-    
+    remove_parser = subparsers.add_parser('remove', help='Remove a server')
+    remove_parser.add_argument('name', help='Name of the server to delete')
+
     # Versions Command
-    subparsers.add_parser('versions', help='Zeige verfügbare Versionen')  
-    
+    subparsers.add_parser('versions', help='Show available versions')
+
     # Cache Command
-    cache_parser = subparsers.add_parser('cache', help='Cache-Verwaltung')
+    cache_parser = subparsers.add_parser('cache', help='Cache management')
     cache_subparsers = cache_parser.add_subparsers(dest='cache_action')
-    cache_subparsers.add_parser('clean', help='Cache bereinigen')
-    cache_subparsers.add_parser('info', help='Cache-Informationen')
-    
+    cache_subparsers.add_parser('clean', help='Clean cache')
+    cache_subparsers.add_parser('info', help='Cache information')
+
     # Config Command
-    config_parser = subparsers.add_parser('config', help='Konfiguration verwalten')
+    config_parser = subparsers.add_parser('config', help='Manage configuration')
     config_subparsers = config_parser.add_subparsers(dest='config_action')
-    config_subparsers.add_parser('show', help='Konfiguration anzeigen')
-    config_set_parser = config_subparsers.add_parser('set', help='Konfigurationswert setzen')
-    config_set_parser.add_argument('key', help='Konfigurationsschlüssel')
-    config_set_parser.add_argument('value', help='Neuer Wert')
+    config_set_parser = config_subparsers.add_parser('set', help='Set configuration value')
+    config_set_parser.add_argument('key', help='Configuration key')
+    config_set_parser.add_argument('value', help='New value')
     
     args = parser.parse_args()
     
@@ -799,11 +751,11 @@ Beispiele:
     
     try:
         if args.command == 'create':
-            # Java-Check nur wenn nicht übersprungen
+            # Java check only if not skipped
             if not creator.check_java_version():
                 sys.exit(1)
             
-            # Sammle alle Optionen
+            # Collect all options
             options = {
                 'gamemode': args.gamemode,
                 'difficulty': args.difficulty,
@@ -821,9 +773,9 @@ Beispiele:
         elif args.command == 'list':
             servers = creator.list_servers()
             if not servers:
-                print("Keine Server gefunden.")
+                print("No servers found.")
             else:
-                print(f"Gefundene Server ({len(servers)}):")
+                print(f"Found servers ({len(servers)}):")
                 for server_dir in servers:
                     info_file = server_dir / "server_info.json"
                     if info_file.exists():
@@ -834,16 +786,16 @@ Beispiele:
                                   f"Port {info.get('port', 'unknown')}, "
                                   f"Memory {info.get('memory', 'unknown')}")
                         except:  # noqa: E722
-                            print(f"  {server_dir.name}: (Info nicht lesbar)")
+                            print(f"  {server_dir.name}: (Info not readable)")
                     else:
-                        print(f"  {server_dir.name}: (Keine Info verfügbar)")
+                        print(f"  {server_dir.name}: (No info available)")
         
         elif args.command == 'remove':
             creator.remove_server(args.name)
         
         elif args.command == 'versions':
             versions = creator.get_available_versions()
-            print("Verfügbare Minecraft Versionen:")
+            print("Available Minecraft versions:")
             for i, version in enumerate(versions, 1):
                 print(f"  {version}", end="\n" if i % 5 == 0 else " ")
             if len(versions) % 5 != 0:
@@ -861,11 +813,11 @@ Beispiele:
                             cache_size += file_path.stat().st_size
                             file_count += 1
                 
-                print(f"Cache-Verzeichnis: {creator.cache_dir}")
-                print(f"Dateien: {file_count}")
-                print(f"Größe: {cache_size / 1024 / 1024:.2f} MB")
+                print(f"Cache directory: {creator.cache_dir}")
+                print(f"Files: {file_count}")
+                print(f"Size: {cache_size / 1024 / 1024:.2f} MB")
             else:
-                print("Cache-Aktion erforderlich: clean, info")
+                print("Cache action required: clean, info")
         
         elif args.command == 'config':
             if args.config_action == 'show':
@@ -873,13 +825,13 @@ Beispiele:
             elif args.config_action == 'set':
                 creator.update_config(args.key, args.value)
             else:
-                print("Config-Aktion erforderlich: show, set")
+                print("Config action required: show, set")
         
     except KeyboardInterrupt:
-        print("\nAbgebrochen.")
+        print("\nCancelled.")
         sys.exit(1)
     except Exception as e:
-        print(f"Fehler: {e}")
+        print(f"Error: {e}")
         sys.exit(1)
 
 
